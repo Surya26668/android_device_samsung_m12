@@ -436,8 +436,13 @@ jobs:
           #  sementara, BUKAN kesalahan kode.
           #
           #    --retry-fetches=5  ulangi otomatis saat fetch gagal
-          #    --fail-fast=false  jangan berhenti di error pertama
+          #    --no-fail-fast     jangan berhenti di error pertama
           #    -j4                kurangi paralel, server lebih ramah
+          #
+          #  PENTING: '--fail-fast' TIDAK menerima nilai. Menulis
+          #  '--fail-fast=false' membuat repo error:
+          #     "option does not take a value"
+          #  Pakai '--no-fail-fast' (tanpa '=').
           #
           #  Dicoba 3x, jeda 60 detik antar percobaan.
           # ------------------------------------------------------------
@@ -458,12 +463,29 @@ jobs:
           for attempt in 1 2 3; do
             echo ""
             echo "########## repo sync percobaan $attempt dari 3 ##########"
+
+            # Cek opsi mana yang didukung versi repo di runner ini.
+            # Opsi yang tidak dikenal membuat repo langsung error:
+            #    "main.py: error: unrecognized arguments: ..."
+            HELP="$(repo sync --help 2>&1 || true)"
+            OPT=""
+            if echo "$HELP" | grep -q -- "--retry-fetches"; then
+              OPT="$OPT --retry-fetches=5"
+            fi
+            if echo "$HELP" | grep -q -- "--no-fail-fast"; then
+              OPT="$OPT --no-fail-fast"
+            fi
+            echo "  opsi tambahan yang dipakai:$OPT"
+
+            # '--fail-fast' TIDAK menerima nilai. Menulis
+            # '--fail-fast=false' membuat repo error
+            #   "option does not take a value"
+            # Pakai '--no-fail-fast' (tanpa '=').
             if repo sync -c -j4 \
                  --force-sync \
                  --no-clone-bundle \
                  --no-tags \
-                 --retry-fetches=5 \
-                 --fail-fast=false ; then
+                 $OPT ; then
               OK=1
               echo ">>> repo sync BERHASIL pada percobaan $attempt"
               break
@@ -478,10 +500,12 @@ jobs:
             echo "=============================================================="
             echo "  repo sync GAGAL 3x"
             echo "=============================================================="
-            echo "  Penyebab hampir pasti: android.googlesource.com gangguan"
-            echo "  (HTTP 503). Bukan kesalahan konfigurasi device tree."
+            echo "  Lihat pesan error DI ATAS untuk penyebab sebenarnya."
             echo ""
-            echo "  Solusi: jalankan ulang workflow 10-30 menit lagi."
+            echo "  Kalau pesannya HTTP 503 / 'bytes of body are still"
+            echo "  expected' -> gangguan android.googlesource.com."
+            echo "  Solusi: run ulang workflow 10-30 menit lagi."
+            echo "=============================================================="
             echo "=============================================================="
             exit 1
           fi
