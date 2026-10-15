@@ -174,9 +174,12 @@ jobs:
           mkdir -p device/samsung/m12/prebuilt
 
           # ---- device tree dari repo user ----
+          # CATATAN: repo WAJIB Surya26668 (tempat kernel.gz + twrp_m12.mk
+          # berada). Repo Kuyukbot1 masih punya AndroidProducts.mk LAMA
+          # (omni_m12) dan TIDAK punya twrp_m12.mk -> lunch pasti gagal.
           git clone --depth=1 \
             -b "m12nsxx-user-13-TP1A.220624.014-M127FXXS9DXJ3-release-keys" \
-            https://github.com/Kuyukbot1/android_device_samsung_m12.git \
+            https://github.com/Surya26668/android_device_samsung_m12.git \
             /tmp/dt-src
 
           # copy semua file (kecuali .git) ke device/samsung/m12
@@ -545,21 +548,81 @@ jobs:
           echo ""
 
           # ------------------------------------------------------------
-          #  vendorsetup.sh obsolete -> ganti jadi kosong supaya
-          #  tidak memunculkan peringatan add_lunch_combo
+          #  DEBUG: buktikan vendor/twrp ada (dibutuhkan twrp_m12.mk)
+          #  Kalau vendor/twrp/config/common.mk TIDAK ADA, lunch akan
+          #  gagal SENYAP dan cuma bilang "Invalid lunch combo".
+          # ------------------------------------------------------------
+          echo "=== [DEBUG] vendor/twrp ==="
+          if [ -f vendor/twrp/config/common.mk ]; then
+            echo "  [OK] vendor/twrp/config/common.mk ADA"
+          else
+            echo "  [GAGAL] vendor/twrp/config/common.mk TIDAK ADA"
+            echo "  -> repo sync tidak lengkap, lunch pasti gagal"
+            exit 1
+          fi
+
+          echo ""
+          echo "=== [DEBUG] apakah AndroidProducts.mk ditemukan envsetup? ==="
+          echo "  D = $D"
+          ls -la $D/AndroidProducts.mk
+
+          echo ""
+          echo "=== [DEBUG] isi $D/AndroidProducts.mk (hexdump awal) ==="
+          head -c 200 $D/AndroidProducts.mk | od -c | head -5
+
+          # ------------------------------------------------------------
+          #  vendorsetup.sh obsolete -> ganti jadi kosong
           # ------------------------------------------------------------
           echo "# kosong - TWRP 14 pakai AndroidProducts.mk" > $D/vendorsetup.sh
 
           source build/envsetup.sh
 
           echo ""
-          echo "=== DAFTAR LUNCH CHOICES YANG TERBACA ==="
-          echo "  (kalau kosong, AndroidProducts.mk tidak terbaca)"
+          echo "=== [DEBUG] FUNGSI & VARIABEL LUNCH ==="
+          echo "  tipe 'lunch'     : $(type -t lunch)"
+          echo "  ada add_lunch_combo: $(type -t add_lunch_combo || echo 'TIDAK ADA')"
           echo ""
+          echo "=== [DEBUG] CARI AndroidProducts.mk DI SEMUA TEMPAT ==="
+          find device/samsung -name "AndroidProducts.mk" 2>/dev/null || echo "  TIDAK DITEMUKAN"
+          echo ""
+          echo "=== [DEBUG] LUNCH MENU (dari envsetup) ==="
+          echo "  TARGET_PRODUCT sebelum lunch = '$TARGET_PRODUCT'"
+          echo ""
+          echo "  coba: print_lunch_menu"
+          print_lunch_menu 2>&1 | head -30 || echo "  print_lunch_menu gagal"
 
           echo "=== lunch ==="
-          # TWRP 14 pakai prefix "twrp_", bukan "omni_"
+          # TWRP 14 pakai prefix "twrp_", bukan "omni_".
+          # Jangan pakai 'set -e' di sini: kita ingin coba beberapa
+          # nama dan lihat pesan error aslinya, bukan mati senyap.
           lunch twrp_m12-eng
+          LUNCH_RC=$?
+          echo "  lunch twrp_m12-eng -> exit code $LUNCH_RC"
+
+          if [ "$LUNCH_RC" != "0" ]; then
+            echo ""
+            echo "=== lunch gagal, coba alternatif ==="
+            for combo in twrp_m12-userdebug twrp_m12-user; do
+              echo "  coba: $combo"
+              lunch $combo
+              if [ $? -eq 0 ]; then
+                LUNCH_RC=0
+                echo "  >>> $combo BERHASIL"
+                break
+              fi
+            done
+          fi
+
+          if [ "$LUNCH_RC" != "0" ]; then
+            echo ""
+            echo "=============================================================="
+            echo "  SEMUA LUNCH GAGAL"
+            echo "=============================================================="
+            echo "  Artinya AndroidProducts.mk TIDAK terbaca oleh envsetup.sh."
+            echo "  Lihat bagian [DEBUG] di atas untuk detail."
+            echo "=============================================================="
+            exit 1
+          fi
 
           echo ""
           echo "=== cek TARGET_PRODUCT ==="
