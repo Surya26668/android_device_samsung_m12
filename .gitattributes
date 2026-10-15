@@ -1,0 +1,38 @@
+# ==============================================================
+#  .gitattributes untuk repo device tree m12
+#
+#  PENTING: file biner harus ditandai supaya git TIDAK
+#  mencoba mengubahnya (line-ending, diff, dst).
+#
+#  Kejadian umum: kernel.gz rusak karena git menganggapnya teks
+#  lalu mengubah CRLF -> LF. Setelah gunzip, kernel jadi beda
+#  dan sha1 tidak cocok -> build gagal.
+# ==============================================================
+
+# --- biner: JANGAN disentuh ---
+*.gz      binary
+*.img     binary
+*.bin     binary
+*.tar     binary
+*.tar.md5 binary
+*.apk     binary
+*.jar     binary
+*.so      binary
+*.ko      binary
+*.lz4     binary
+*.xz      binary
+
+# --- kernel mentah tidak punya ekstensi; tandai lewat folder ---
+prebuilt/kernel  binary
+
+# --- jangan konversi line ending untuk file di prebuilt/ ---
+prebuilt/**      -text
+
+# --- file teks: pakai LF (Linux) ---
+*.mk      text eol=lf
+*.sh      text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.fstab   text eol=lf
+*.txt     text eol=lf
+*.md      text eol=lf
