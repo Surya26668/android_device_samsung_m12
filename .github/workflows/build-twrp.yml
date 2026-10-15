@@ -58,6 +58,39 @@ jobs:
 
     steps:
       # ============================================================
+      #  WAJIB: ambil isi repo ke runner.
+      #  Tanpa step ini $GITHUB_WORKSPACE KOSONG, sehingga
+      #  prebuilt/kernel.gz dan devicetree/ tidak ada.
+      # ============================================================
+      - name: '0a. Checkout repo (ambil prebuilt + devicetree)'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: '0b. Bukti checkout berhasil'
+        run: |
+          echo "=== GITHUB_WORKSPACE = $GITHUB_WORKSPACE ==="
+          ls -la "$GITHUB_WORKSPACE"
+          echo ""
+          echo "--- prebuilt/ ---"
+          ls -la "$GITHUB_WORKSPACE/prebuilt/" || { echo "!!! prebuilt TIDAK ADA"; exit 1; }
+          echo ""
+          echo "--- devicetree/ ---"
+          ls -la "$GITHUB_WORKSPACE/devicetree/" || { echo "!!! devicetree TIDAK ADA"; exit 1; }
+          echo ""
+          echo "--- cek file wajib ---"
+          for f in "prebuilt/kernel.gz" "prebuilt/dtb.img" "devicetree/BoardConfig.mk" "devicetree/device.mk" "devicetree/omni_m12.mk"; do
+            if [ -s "$GITHUB_WORKSPACE/$f" ]; then
+              echo "  [OK] $f  ($(stat -c%s "$GITHUB_WORKSPACE/$f") B)"
+            else
+              echo "  [GAGAL] $f HILANG"
+              exit 1
+            fi
+          done
+          echo ""
+          echo "=== CHECKOUT LENGKAP ==="
+
+      # ============================================================
       - name: '0. Info sistem'
         run: |
           echo "=== Info runner ==="
