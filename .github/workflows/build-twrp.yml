@@ -185,6 +185,10 @@ jobs:
           # copy semua file (kecuali .git) ke device/samsung/m12
           rsync -a --exclude='.git' /tmp/dt-src/ device/samsung/m12/
 
+          # Jangan bawa folder devicetree/ salinan (isinya duplikat;
+          # bikin bingung saat 'find' mencari AndroidProducts.mk).
+          rm -rf device/samsung/m12/devicetree
+
           echo "=== isi device tree ==="
           ls -la device/samsung/m12/
           echo "--- prebuilt ---"
@@ -194,6 +198,54 @@ jobs:
           rm -f device/samsung/m12/prebuilt/kernel
           rm -f device/samsung/m12/prebuilt/dtb.img
           echo "kernel DXJ3 bawaan dihapus (beda firmware dgn HP)"
+
+          # ============================================================
+          #  >>> INI KUNCI MASALAH "Invalid lunch combo" <<<
+          #
+          #  envsetup.sh TIDAK memindai folder device/. Dia bertanya
+          #  ke sistem build:
+          #      get_build_var COMMON_LUNCH_CHOICES
+          #
+          #  get_build_var menjalankan 'make', dan 'make' hanya tahu
+          #  device tree yang TERDAFTAR di root build system.
+          #
+          #  Pendaftaran resmi: tambahkan baris di
+          #      build/make/target/product/AndroidProducts.mk
+          #  yang meng-include AndroidProducts.mk device kita.
+          #
+          #  Tanpa ini: print_lunch_menu KOSONG, TARGET_PRODUCT kosong,
+          #  dan lunch selalu bilang "Invalid lunch combo".
+          # ============================================================
+          echo "=== DAFTARKAN device tree ke build system ==="
+          ROOT_AP=build/make/target/product/AndroidProducts.mk
+          if [ ! -f "$ROOT_AP" ]; then
+            echo "  [GAGAL] $ROOT_AP tidak ada"
+            echo "  (build/make belum ter-sync?)"
+            exit 1
+          fi
+
+          echo "  sebelum:"
+          grep -c "samsung" "$ROOT_AP" 2>/dev/null || echo "    0 baris samsung"
+
+          if ! grep -q "samsung/m12/AndroidProducts.mk" "$ROOT_AP"; then
+            {
+              echo ""
+              echo "# --- device tree m12 (ditambahkan oleh build TWRP) ---"
+              echo "PRODUCT_MAKEFILES += \\"
+              echo "    device/samsung/m12/AndroidProducts.mk"
+              echo ""
+              echo "COMMON_LUNCH_CHOICES += \\"
+              echo "    twrp_m12-eng \\"
+              echo "    twrp_m12-userdebug \\"
+              echo "    twrp_m12-user"
+            } >> "$ROOT_AP"
+            echo "  [OK] baris m12 ditambahkan ke $ROOT_AP"
+          else
+            echo "  [OK] sudah terdaftar sebelumnya"
+          fi
+
+          echo "  sesudah:"
+          tail -12 "$ROOT_AP"
 
       # ============================================================
       - name: '6. Pasang prebuilt kernel STOK DWC4 + terapkan perbaikan'
@@ -575,6 +627,22 @@ jobs:
           # ------------------------------------------------------------
           echo "# kosong - TWRP 14 pakai AndroidProducts.mk" > $D/vendorsetup.sh
 
+          # ------------------------------------------------------------
+          #  Buktikan device tree SUDAH terdaftar di root build system.
+          #  Kalau belum, lunch pasti gagal dan menunya kosong.
+          # ------------------------------------------------------------
+          echo ""
+          echo "=== [DEBUG] pendaftaran di build system ==="
+          ROOT_AP=build/make/target/product/AndroidProducts.mk
+          if grep -q "samsung/m12" "$ROOT_AP" 2>/dev/null; then
+            echo "  [OK] samsung/m12 terdaftar di $ROOT_AP"
+          else
+            echo "  [GAGAL] samsung/m12 TIDAK terdaftar di $ROOT_AP"
+            echo "  Isi terakhir file itu:"
+            tail -20 "$ROOT_AP" 2>/dev/null || echo "  (file tidak ada)"
+            exit 1
+          fi
+
           source build/envsetup.sh
 
           echo ""
@@ -584,6 +652,11 @@ jobs:
           echo ""
           echo "=== [DEBUG] CARI AndroidProducts.mk DI SEMUA TEMPAT ==="
           find device/samsung -name "AndroidProducts.mk" 2>/dev/null || echo "  TIDAK DITEMUKAN"
+          echo ""
+          echo "=== [DEBUG] COMMON_LUNCH_CHOICES (yang dibaca envsetup) ==="
+          echo "  (ini yang menentukan menu lunch)"
+          TARGET_BUILD_APPS= TARGET_PRODUCT= TARGET_RELEASE= TARGET_BUILD_VARIANT= \
+            get_build_var COMMON_LUNCH_CHOICES 2>&1 | head -20 || echo "  get_build_var gagal"
           echo ""
           echo "=== [DEBUG] LUNCH MENU (dari envsetup) ==="
           echo "  TARGET_PRODUCT sebelum lunch = '$TARGET_PRODUCT'"
