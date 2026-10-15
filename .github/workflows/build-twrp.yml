@@ -332,12 +332,24 @@ jobs:
           # ---- timpa file device tree yang diperbaiki ----
           echo ""
           echo "=== TIMPA file yang sudah diperbaiki ==="
-          for f in BoardConfig.mk device.mk omni_m12.mk; do
+          for f in BoardConfig.mk device.mk omni_m12.mk twrp_m12.mk; do
             if [ -f "$GITHUB_WORKSPACE/devicetree/$f" ]; then
               cp "$GITHUB_WORKSPACE/devicetree/$f" "$D/$f"
               echo "  ditimpa: $f ($(wc -l < $D/$f) baris)"
             else
               echo "  !!! TIDAK ADA: workspace/devicetree/$f"
+              exit 1
+            fi
+          done
+
+          # AndroidProducts.mk + twrp_m12.mk di root repo
+          # (bukan di devicetree/) -> salin ke device tree
+          for f in AndroidProducts.mk twrp_m12.mk; do
+            if [ -f "$GITHUB_WORKSPACE/$f" ]; then
+              cp "$GITHUB_WORKSPACE/$f" "$D/$f"
+              echo "  disalin: $f ($(wc -l < $D/$f) baris)"
+            else
+              echo "  !!! TIDAK ADA di root repo: $f"
               exit 1
             fi
           done
@@ -427,18 +439,64 @@ jobs:
           cd ~/twrp
           export ALLOW_MISSING_DEPENDENCIES=true
           export LC_ALL=C
+
+          # ------------------------------------------------------------
+          #  Pastikan device tree LENGKAP sebelum build.
+          #  AndroidProducts.mk + twrp_m12.mk + vendorsetup.sh harus
+          #  ada, kalau tidak "lunch" akan gagal:
+          #     "Invalid lunch combo: twrp_m12-eng"
+          # ------------------------------------------------------------
+          D=device/samsung/m12
+          echo "=== CEK DEVICE TREE SEBELUM BUILD ==="
+          for f in AndroidProducts.mk BoardConfig.mk device.mk twrp_m12.mk recovery.fstab prebuilt/kernel prebuilt/dtb.img; do
+            if [ -s "$D/$f" ]; then
+              echo "  [OK] $f ($(stat -c%s $D/$f) B)"
+            else
+              echo "  [GAGAL] $D/$f HILANG"
+              exit 1
+            fi
+          done
+          echo ""
+          echo "--- AndroidProducts.mk ---"
+          cat $D/AndroidProducts.mk
+          echo ""
+          echo "--- prebuilt/ ---"
+          ls -la $D/prebuilt/
+          echo ""
+
+          # ------------------------------------------------------------
+          #  vendorsetup.sh obsolete -> ganti jadi kosong supaya
+          #  tidak memunculkan peringatan add_lunch_combo
+          # ------------------------------------------------------------
+          echo "# kosong - TWRP 14 pakai AndroidProducts.mk" > $D/vendorsetup.sh
+
           source build/envsetup.sh
 
+          echo ""
+          echo "=== DAFTAR LUNCH CHOICES YANG TERBACA ==="
+          echo "  (kalau kosong, AndroidProducts.mk tidak terbaca)"
+          echo ""
+
           echo "=== lunch ==="
-          lunch omni_m12-eng || lunch omni_m12-userdebug
+          # TWRP 14 pakai prefix "twrp_", bukan "omni_"
+          lunch twrp_m12-eng
 
           echo ""
+          echo "=== cek TARGET_PRODUCT ==="
+          echo "  TARGET_PRODUCT = $TARGET_PRODUCT"
+          echo "  TARGET_DEVICE  = $TARGET_DEVICE"
+          if [ "$TARGET_DEVICE" != "m12" ]; then
+            echo "!!! TARGET_DEVICE salah, harusnya m12"
+            exit 1
+          fi
+          echo ""
+
           echo "=== mulai build recovery image ==="
-          mka recoveryimage -j$(nproc --all) 2>&1 | tail -120
+          mka recoveryimage -j$(nproc --all) 2>&1 | tail -150
 
           echo ""
           echo "=== hasil ==="
-          find out/target/product/m12 -maxdepth 1 -name "*.img" -exec ls -la {} \;
+          find out/target/product/m12 -maxdepth 1 -name "*.img" -exec ls -la {} \; 2>/dev/null || true
 
       # ============================================================
       - name: '10. Verifikasi hasil build'
