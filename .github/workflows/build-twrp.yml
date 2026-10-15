@@ -429,7 +429,63 @@ jobs:
         run: |
           cd ~/twrp
           echo "Mulai repo sync (bisa 1-2 jam)..."
-          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+
+          # ------------------------------------------------------------
+          #  android.googlesource.com kadang balas HTTP 503 atau
+          #  "784 bytes of body are still expected" = gangguan jaringan
+          #  sementara, BUKAN kesalahan kode.
+          #
+          #    --retry-fetches=5  ulangi otomatis saat fetch gagal
+          #    --fail-fast=false  jangan berhenti di error pertama
+          #    -j4                kurangi paralel, server lebih ramah
+          #
+          #  Dicoba 3x, jeda 60 detik antar percobaan.
+          # ------------------------------------------------------------
+
+          # Kalau run sebelumnya gagal separuh, sisa repo bisa korup.
+          # Bersihkan supaya percobaan berikutnya tidak ikut gagal.
+          echo "=== bersihkan sisa sync yang rusak (kalau ada) ==="
+          for d in prebuilts/misc prebuilts/module_sdk/Uwb \
+                   prebuilts/vndk/v29 prebuilts/vndk/v30 \
+                   system/hardware/interfaces system/keymaster ; do
+            if [ -d "$d" ] && [ ! -d "$d/.git" ]; then
+              echo "  hapus folder rusak: $d"
+              rm -rf "$d"
+            fi
+          done
+
+          OK=0
+          for attempt in 1 2 3; do
+            echo ""
+            echo "########## repo sync percobaan $attempt dari 3 ##########"
+            if repo sync -c -j4 \
+                 --force-sync \
+                 --no-clone-bundle \
+                 --no-tags \
+                 --retry-fetches=5 \
+                 --fail-fast=false ; then
+              OK=1
+              echo ">>> repo sync BERHASIL pada percobaan $attempt"
+              break
+            fi
+            echo ""
+            echo ">>> percobaan $attempt gagal, tunggu 60 detik..."
+            sleep 60
+          done
+
+          if [ "$OK" != "1" ]; then
+            echo ""
+            echo "=============================================================="
+            echo "  repo sync GAGAL 3x"
+            echo "=============================================================="
+            echo "  Penyebab hampir pasti: android.googlesource.com gangguan"
+            echo "  (HTTP 503). Bukan kesalahan konfigurasi device tree."
+            echo ""
+            echo "  Solusi: jalankan ulang workflow 10-30 menit lagi."
+            echo "=============================================================="
+            exit 1
+          fi
+
           echo "=== repo sync selesai ==="
           du -sh ~/twrp
 
